@@ -1,0 +1,15 @@
+store:
+    resource: "@StoreBundle/Controller/"
+    type:     annotation
+    prefix:   store/
+
+app:
+    resource: "@AppBundle/Controller/"
+    type:     annotation
+
+users:
+    type:     rest
+    resource: AppBundle\Controller\ApiController
+
+logout:
+    path: /logout
