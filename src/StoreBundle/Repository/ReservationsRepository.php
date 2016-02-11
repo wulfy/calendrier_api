@@ -87,7 +87,25 @@ class ReservationsRepository extends \Doctrine\ORM\EntityRepository
 	    }
 	}
 
-	
+	public function findAllByUserIdWithDetailsForClient($userId,$clientId)
+	{
+		$query = $this->getEntityManager()
+	        ->createQuery(
+	            'SELECT r.id, r.date_start as dateStart, r.date_end as dateEnd, 
+	            CASE WHEN r.id_client = :clientId THEN r.title ELSE \'\' END as title ,
+	            CASE WHEN r.id_client = :clientId THEN r.id_client  ELSE \'\' END as idClient 
+	           	FROM StoreBundle:Reservations r
+	            WHERE r.id_user = :userId AND r.date_start > CURRENT_DATE() ORDER BY r.date_start'
+	        )->setParameters(array('clientId' => $clientId, 'userId' => $userId));
+
+	    try {
+	        return $query->getResult();
+	    } catch (\Doctrine\ORM\NoResultException $e) {
+	        return null;
+	    }
+	}
+
+
 	public function findAllByUser($id)
 	{
 	    $query = $this->getEntityManager()
@@ -102,6 +120,22 @@ class ReservationsRepository extends \Doctrine\ORM\EntityRepository
 	        return null;
 	    }
 	}
+
+	public function findAllWithoutDetailsByUserId($id)
+	{
+	    $query = $this->getEntityManager()
+	        ->createQuery(
+	            'SELECT r.id, r.date_start as dateStart, r.date_end as dateEnd FROM StoreBundle:Reservations r
+	            WHERE r.id_user = :id'
+	        )->setParameter('id', $id);
+
+	    try {
+	        return $query->getResult();
+	    } catch (\Doctrine\ORM\NoResultException $e) {
+	        return null;
+	    }
+	}
+	
 
 	public function findAllByClientIdJoinedToClient($id)
 	{

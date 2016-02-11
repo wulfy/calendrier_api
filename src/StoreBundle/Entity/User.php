@@ -8,6 +8,7 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * @ORM\Entity
  * @ORM\Table(name="user")
+ *@ORM\Entity(repositoryClass="StoreBundle\Repository\UserRepository")
  */
 class User implements UserInterface
 {
@@ -29,7 +30,7 @@ class User implements UserInterface
     private $password;
 
     /**
-     * @ORM\Column(type="string", unique=true)
+     * @ORM\Column(type="string", unique=true, nullable=true)
      */
     private $apiKey;
 
@@ -61,6 +62,25 @@ class User implements UserInterface
     }
     public function eraseCredentials()
     {
+    }
+
+    public function setUsername($username)
+    {
+        $this->username = $username;
+
+        return $this;
+    }
+    public function setPassword($password)
+    {
+        $this->password = $password;
+
+        return $this;
+    }
+    public function setRoles($roles)
+    {
+        $this->roles = $roles;
+
+        return $this;
     }
 
     // more getters/setters

@@ -5,7 +5,9 @@ namespace AppBundle\Controller;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use FOS\RestBundle\Controller\FOSRestController;
 use StoreBundle\Entity\Reservations;
+use StoreBundle\Entity\Params;
 use FOS\RestBundle\Controller\Annotations\Get;
+use FOS\RestBundle\Controller\Annotations\Post;
 use Symfony\Component\HttpFoundation\Request;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Security;
 use StoreBundle\Entity\User;
@@ -33,6 +35,26 @@ class ApiController extends FOSRestController
 
     /**
      * @return array
+     *@Get("/params/user/{id}")
+     */
+    public function getCalendarParams($id)
+    {
+        $params = $this->get('doctrine')
+                         ->getManager('events')
+                         ->getRepository('StoreBundle:Params')
+                         ->findOneBy(array('idUser' => intval($id)));
+
+
+        //$data = array('users' => 'hello', 'tara' => 'tata');
+        $view = $this->view($params, 200)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
+
+            return $this->handleView($view);
+    }
+
+    /**
+     * @return array
      *@Get("/reservations/client/{id}")
      */
     public function getReservationsWidthDetailedForClientAction($id)
@@ -51,8 +73,26 @@ class ApiController extends FOSRestController
 
     /**
      * @return array
-     *@Get("/reservations/user/{userId}/client/{clientId}")
      *
+     */
+    /**public function getReservationsWithoutDetailsForUser($id)
+    {
+        $reservations = $this->get('doctrine')
+                         ->getManager('events')
+                         ->getRepository('StoreBundle:Reservations')
+                         ->findAllWithoutDetailsByUserId($id);
+        //$data = array('users' => 'hello', 'tara' => 'tata');
+        $view = $this->view($reservations, 200)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
+
+            return $this->handleView($view);
+    }**/
+
+    /**
+     * @return array
+     *@Get("/reservations/user/{userId}/client/{clientId}")
+     *@Security("has_role('ROLE_ADMIN')")
      */
     public function getReservationsAndClientByClientAction($userId,$clientId)
     {
@@ -60,17 +100,43 @@ class ApiController extends FOSRestController
         $reservations1 = $this->get('doctrine')
                          ->getManager('events')
                          ->getRepository('StoreBundle:Reservations')
-                         ->findAllByUserIdWithoutDetailsLessClient($userId,$clientId);
+                         ->findAllByUserIdWithDetailsForClient($userId,$clientId);
 
-        $reservations2 = $this->get('doctrine')
+        /*$reservations2 = $this->get('doctrine')
                          ->getManager('events')
                          ->getRepository('StoreBundle:Reservations')
-                         ->findClientReservationsByClientAndUserId($userId,$clientId);
+                         ->findClientReservationsByClientAndUserId($userId,$clientId);*/
 
-        $reservations = array_merge($reservations1,$reservations2);
+        //$reservations = array_merge($reservations1,$reservations2);
 
         //$data = array('users' => 'hello', 'tara' => 'tata');
-        $view = $this->view($reservations, 200)
+        $view = $this->view($reservations1, 200)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
+
+            return $this->handleView($view);
+    }
+
+    /**
+     * @return array
+     *@Get("/reservations/user/{userId}")
+     *
+     */
+    public function getReservationsForUserDetailsForConnectedClient($userId)
+    {
+
+        $connectedUser = $this->getUser();
+        if($connectedUser)
+            $clientId = $connectedUser->getId();
+        else
+            $clientId = null;
+        
+        $reservations1 = $this->get('doctrine')
+                         ->getManager('events')
+                         ->getRepository('StoreBundle:Reservations')
+                         ->findAllByUserIdWithDetailsForClient($userId,$clientId);
+
+        $view = $this->view($reservations1, 200)
             ->setTemplate('default/getReservations.html.twig')
             ->setTemplateVar('reservations');
 
@@ -80,7 +146,7 @@ class ApiController extends FOSRestController
     /**
      * @return array
      *@Get("/reservations/user/")
-     *@Security("has_role('ROLE_ADMIN')")
+     *@Security("has_role('ROLE_USER')")
      */
     public function getAllReservationsForUserAction()
     {
@@ -100,7 +166,7 @@ class ApiController extends FOSRestController
     /**
      * @return array
      *@Get("/auth/user/")
-     *@Security("has_role('ROLE_ADMIN')")
+     *@Security("has_role('ROLE_CLIENT')")
      */
     public function getAuthenticateUserData()
     {
@@ -145,17 +211,26 @@ class ApiController extends FOSRestController
     }
 
     /**
+     * Book an event by posting form data
+     * check if event is free, then book it
      * @return array
-     *
+     * @Security("has_role(['ROLE_USER','ROLE_CLIENT'])")
      */
     public function postEventsAction(Request $request)
     {
-        
+        $connectedUser = $this->getUser();  
+        $clientId = $connectedUser->getId();
+
+        if($connectedUser->getRoles[0] == 'ROLE_USER')
+        {
+            $userId = $clientId;
+        }else
+        {
+            $userId = $request->request->get('userId');
+        }
         $dateStart = $request->request->get('dateStart');
         $dateEnd = $request->request->get('dateEnd');
         $title = $request->request->get('title');
-        $userId = 2;
-        $clientId = 1;
 
         if($this->isFree($dateStart,$dateEnd,$userId))
         {
@@ -189,6 +264,7 @@ class ApiController extends FOSRestController
     }
 
     /**
+     * TODO
      * @return array
      *
      */
@@ -203,6 +279,7 @@ class ApiController extends FOSRestController
     }
 
     /**
+     * TODO
      * @return array
      *
      */
@@ -214,5 +291,37 @@ class ApiController extends FOSRestController
             ->setTemplateVar('users');
 
             return $this->handleView($view);
+    }
+
+    /**
+     * TODO
+     * @return array
+     *
+     */
+    public function postUsersAction(Request $request){
+        $username = $request->request->get('username');
+        $password = $request->request->get('password');
+        $roles = explode(",",$request->request->get('roles'));
+
+        $user = new User();
+        //encode password
+        $encoder = $this->container->get('security.password_encoder');
+        $encoded = $encoder->encodePassword($user,$password);
+
+        $user->setUsername($username);
+        $user->setPassword($encoded);
+        $user->setRoles($roles);
+
+                
+        $em = $this->getDoctrine()->getManager();
+
+        $em->persist($user);
+        $em->flush();
+
+        $data = "ok";
+        $view = $this->view($user, 200)
+            ->setTemplate('default/getUsers.html.twig')
+            ->setTemplateVar('users');
+
     }
 }

@@ -15,6 +15,9 @@ security:
                 #property: username
         #in_memory:
             #memory: ~
+    role_hierarchy:
+        ROLE_USER:    ROLE_CLIENT
+        ROLE_ADMIN:   [ROLE_USER, ROLE_CLIENT]
 
     firewalls:
         # disables authentication for assets and the profiler, adapt it according to your needs
