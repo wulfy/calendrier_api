@@ -214,19 +214,19 @@ class ApiController extends FOSRestController
      * Book an event by posting form data
      * check if event is free, then book it
      * @return array
-     * @Security("has_role(['ROLE_USER','ROLE_CLIENT'])")
+     * @Security("has_role('ROLE_CLIENT')")
      */
     public function postEventsAction(Request $request)
     {
         $connectedUser = $this->getUser();  
         $clientId = $connectedUser->getId();
 
-        if($connectedUser->getRoles[0] == 'ROLE_USER')
+        if($connectedUser->getRoles()[0] == 'ROLE_USER')
         {
             $userId = $clientId;
         }else
         {
-            $userId = $request->request->get('userId');
+            $userId = $request->request->get('userid');
         }
         $dateStart = $request->request->get('dateStart');
         $dateEnd = $request->request->get('dateEnd');
