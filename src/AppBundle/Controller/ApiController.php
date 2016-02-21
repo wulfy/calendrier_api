@@ -193,13 +193,12 @@ class ApiController extends FOSRestController
         $em = $this->getDoctrine()->getManager();
 
         $query = $em->createQuery('SELECT r.id FROM StoreBundle:Reservations r 
-            WHERE   ((r.date_start BETWEEN :dateStart AND :dateEnd) OR (r.date_end BETWEEN  :dateStart AND :dateEnd)  OR 
+            WHERE   ((r.date_start >= :dateStart AND r.date_start < :dateEnd) OR (r.date_end >  :dateStart AND r.date_end <= :dateEnd)  OR 
             (r.date_start >=  :dateStart AND r.date_end <= :dateEnd) OR (r.date_start <=  :dateStart AND r.date_end >= :dateEnd)) AND r.id_user = :userId');
         $query->setParameter('dateStart', new \DateTime($dateStart));
         $query->setParameter('dateEnd', new \DateTime($dateEnd));
         $query->setParameter('userId', $userId);
         $ids = $query->getResult();
-            
 
         try {
 
@@ -231,10 +230,12 @@ class ApiController extends FOSRestController
         $dateStart = $request->request->get('dateStart');
         $dateEnd = $request->request->get('dateEnd');
         $title = $request->request->get('title');
-
+       
+        
         if($this->isFree($dateStart,$dateEnd,$userId))
         {
                 $reservation = new Reservations();
+                echo("after");
                 $dateTimeStart = new \DateTime($dateStart);
                 $dateTimeEnd = new \DateTime($dateEnd);
                 $reservation->setDateStart($dateTimeStart);
@@ -257,7 +258,7 @@ class ApiController extends FOSRestController
                 return $this->handleView($view);
             }else
             {
-                $view = $this->view("", 400);
+                $view = $this->view("Date is not free", 400);
                 return $this->handleView($view);
             }
         
@@ -298,10 +299,11 @@ class ApiController extends FOSRestController
      * @return array
      *
      */
-    public function postUsersAction(Request $request){
-        $username = $request->request->get('username');
-        $password = $request->request->get('password');
-        $roles = explode(",",$request->request->get('roles'));
+    public function postParamsAction(Request $request){
+        $bookable_periode = $request->request->get('bookable_period');
+        $bookable = $request->request->get('bookable');
+        $duree = $request->request->get('duree');
+        $message = $request->request->get('message');
 
         $user = new User();
         //encode password
@@ -322,6 +324,102 @@ class ApiController extends FOSRestController
         $view = $this->view($user, 200)
             ->setTemplate('default/getUsers.html.twig')
             ->setTemplateVar('users');
+
+        return $this->handleView($view);
+    }
+
+    public function findEmailOrLogin($email,$username){
+        $em = $this->getDoctrine()->getManager();
+
+        $query = $em->createQuery('SELECT u FROM StoreBundle:User u WHERE u.email = :email OR u.username = :username');
+        $query->setParameter('email', $email);
+        $query->setParameter('username', $username);
+
+        $user = $query->getOneOrNullResult();
+
+        return $user;
+
+    }
+
+    protected function checker($checker,$request){
+        $error = [];
+        foreach($checker as $key => $value)
+        {
+            if($data = $request->request->get($key))
+            {
+                $regex = $value["regex"];
+                (preg_match($regex, $data)===1)?null:$error[$key]=$value["error"];
+            }
+        }
+
+        return $error;
+    }
+    /**
+     * TODO
+     * @return array
+     *
+     */
+    public function postUsersAction(Request $request){
+        //((?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%]).{6,20})
+        $checker_array = [
+            'username' => array("regex"=>"/^[a-zA-Z0-9]+([_\s\-]?[a-zA-Z0-9])*$/","error"=>"Login must be alphanumerical"),
+            'password' => array("regex"=>"((?=.*\d)(?=.*[a-z])(?=.*[@#$%.]).{6,20})","error"=>"Password must be at least 6 character , contain 1 number and 1 special char"),
+            'tel' => array("regex"=>"/\(?([0-9]{3})\)?([ .-]?)([0-9]{3})\2([0-9]{4})/","error"=>"Tel error")
+            ];
+
+        $username = $request->request->get('username');
+        $password = $request->request->get('password');
+        $email = $request->request->get('email');
+        $roles = explode(",",$request->request->get('roles'));
+        $error = $this->checker($checker_array,$request);
+        $existingUser = $this->findEmailOrLogin($email,$username);
+        if(count($error)>0)
+        {
+
+            $data = $error;
+            $view = $this->view($data, 400)
+                ->setTemplate('default/getUsers.html.twig')
+                ->setTemplateVar('users');
+
+            return $this->handleView($view);
+        }
+
+        if($existingUser)
+        {
+            $data = [];
+            if($email == $existingUser->getEmail())
+                $data["email"]= "Email already exists";
+            if($username == $existingUser->getUsername())
+                $data["username"]= "Login already exists";
+
+            $view = $this->view($data, 400)
+                ->setTemplate('default/getUsers.html.twig')
+                ->setTemplateVar('users');
+
+            return $this->handleView($view);
+        }
+
+        $user = new User();
+        //encode password
+        $encoder = $this->container->get('security.password_encoder');
+        $encoded = $encoder->encodePassword($user,$password);
+
+        $user->setUsername($username);
+        $user->setPassword($encoded);
+        $user->setRoles($roles);
+        $user->setEmail($email);
+                
+        $em = $this->getDoctrine()->getManager();
+
+        $em->persist($user);
+        $em->flush();
+
+        $data = "ok";
+        $view = $this->view($user, 200)
+            ->setTemplate('default/getUsers.html.twig')
+            ->setTemplateVar('users');
+
+        return $this->handleView($view);
 
     }
 }
