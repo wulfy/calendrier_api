@@ -8,6 +8,7 @@ use StoreBundle\Entity\Reservations;
 use StoreBundle\Entity\Params;
 use FOS\RestBundle\Controller\Annotations\Get;
 use FOS\RestBundle\Controller\Annotations\Post;
+use FOS\RestBundle\Controller\Annotations\Put;
 use Symfony\Component\HttpFoundation\Request;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Security;
 use StoreBundle\Entity\User;
@@ -51,6 +52,29 @@ class ApiController extends FOSRestController
             ->setTemplateVar('reservations');
 
             return $this->handleView($view);
+    }
+
+    /**
+     * @return array
+     *@Get("/params/user")
+     *@Security("has_role('ROLE_USER')")
+     */
+    public function getCalendarParamsForConnectedUser()
+    {
+        $connectedUser = $this->getUser();
+        if($connectedUser)
+        {
+            $id = $connectedUser->getId();
+            return $this->getCalendarParams($id);
+        }else
+        {
+        
+        $view = $this->view('Not connected', 403)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
+
+            return $this->handleView($view);
+        }
     }
 
     /**
@@ -297,35 +321,50 @@ class ApiController extends FOSRestController
     /**
      * TODO
      * @return array
-     *
+     * @Put("/params/user")
+     * @Security("has_role('ROLE_USER')")
      */
-    public function postParamsAction(Request $request){
-        $bookable_periode = $request->request->get('bookable_period');
-        $bookable = $request->request->get('bookable');
-        $duree = $request->request->get('duree');
-        $message = $request->request->get('message');
+    public function putParamsAction(Request $request){
+        
+        $connectedUser = $this->getUser();
+        if($connectedUser)
+        {
+            $em = $this->getDoctrine()->getManager();
+            $idUser = $connectedUser->getId();
+            $bookable_periode = $request->request->get('bookable_period');
+            $bookable = 1;
+            $duree = $request->request->get('duree');
+            $message = \varchar($request->request->get('message'));
 
-        $user = new User();
-        //encode password
-        $encoder = $this->container->get('security.password_encoder');
-        $encoded = $encoder->encodePassword($user,$password);
+            $params = $em->getRepository('StoreBundle:Params')->findOneByidUser($idUser);
 
-        $user->setUsername($username);
-        $user->setPassword($encoded);
-        $user->setRoles($roles);
+            if (!$params) {
+                throw $this->createNotFoundException(
+                    'No params found for userid : '.$idUser
+                );
+            }
 
-                
-        $em = $this->getDoctrine()->getManager();
+            $params->setDuree($duree);
+            $params->setBookablePeriods($bookable_periode);
+            $params->setMessage($message);
+            $em->flush();
 
-        $em->persist($user);
-        $em->flush();
+            $data = "ok";
+            $view = $this->view($user, 200)
+                ->setTemplate('default/getUsers.html.twig')
+                ->setTemplateVar('users');
 
-        $data = "ok";
-        $view = $this->view($user, 200)
-            ->setTemplate('default/getUsers.html.twig')
-            ->setTemplateVar('users');
+            return $this->handleView($view);
+        }else
+        {
+        
+        $view = $this->view('Not connected', 403)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
 
-        return $this->handleView($view);
+            return $this->handleView($view);
+        }
+        
     }
 
     public function findEmailOrLogin($email,$username){
@@ -412,6 +451,14 @@ class ApiController extends FOSRestController
         $em = $this->getDoctrine()->getManager();
 
         $em->persist($user);
+        $em->flush();
+
+        $params = New Params();
+        $params->setDuree("30");
+        $params->setBookablePeriods(";;;,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,;;;");
+        $params->setMessage("");
+        $params->setBookable(1);
+        $params->setIdUser($user->getId());
         $em->flush();
 
         $data = "ok";
