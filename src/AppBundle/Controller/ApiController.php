@@ -143,6 +143,36 @@ class ApiController extends FOSRestController
 
     /**
      * @return array
+     *@Get("/reservation/details/{reservationId}")
+     *@Security("has_role('ROLE_USER')")
+     */
+    public function getReservationDetails($reservationId){
+        $connectedUser = $this->getUser();
+        $userId = null;
+        $returnCode = 200;
+
+        if($connectedUser)
+            $userId= $connectedUser->getId();
+
+        $reservationData = $this->get('doctrine')
+                         ->getManager('events')
+                         ->getRepository('StoreBundle:Reservations')
+                         ->findClientDataForReservationId($reservationId,$userId);
+       
+        if(sizeof($reservationData)<1)
+            $returnCode = 400;
+
+        $view = $this->view($reservationData, $returnCode)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
+
+            return $this->handleView($view);
+
+        
+    }   
+
+    /**
+     * @return array
      *@Get("/reservations/user/{userId}")
      *
      */
@@ -154,13 +184,23 @@ class ApiController extends FOSRestController
             $clientId = $connectedUser->getId();
         else
             $clientId = null;
-        
-        $reservations1 = $this->get('doctrine')
+       
+        if($clientId == $userId)
+        {
+            $reservations = $this->get('doctrine')
+                         ->getManager('events')
+                         ->getRepository('StoreBundle:Reservations')
+                         ->findAllByUserIdWithDetails($userId);
+        }else
+        {
+         $reservations = $this->get('doctrine')
                          ->getManager('events')
                          ->getRepository('StoreBundle:Reservations')
                          ->findAllByUserIdWithDetailsForClient($userId,$clientId);
+        }
 
-        $view = $this->view($reservations1, 200)
+
+        $view = $this->view($reservations, 200)
             ->setTemplate('default/getReservations.html.twig')
             ->setTemplateVar('reservations');
 
@@ -201,13 +241,131 @@ class ApiController extends FOSRestController
         /*$user = new User();
         $encoder = $this->container->get('security.password_encoder');
         $encoded = $encoder->encodePassword($user, "test");*/
-        $connectedUser = $this->getUser();                 
+        $connectedUser = $this->getUser();    
+         $em = $this->getDoctrine()->getManager();
+        $query = $em->createQuery('SELECT u.id,u.username,u.email,u.roles FROM StoreBundle:User u
+            WHERE  u.id = :userId');
+        $query->setParameter('userId', $connectedUser->getId());
+        $user = $query->getSingleResult();
+     
 
-        $view = $this->view($connectedUser, 200)
+        $view = $this->view($user, 200)
             ->setTemplate('default/getReservations.html.twig')
             ->setTemplateVar('reservations');
 
             return $this->handleView($view);
+    }
+
+    /**
+     *
+     *@Put("/edit/user")
+     *@Security("has_role('ROLE_CLIENT')")
+     */
+    public function putUsersAction(Request $request)
+    {
+        $connectedUser = $this->getUser();
+        $em = $this->getDoctrine()->getManager();
+
+        if(isset($connectedUser))
+        {
+
+            $checker_array = [
+            'username' => array("regex"=>"/^[a-zA-Z0-9]+([_\s\-]?[a-zA-Z0-9])*$/","error"=>"Login must be alphanumerical"),
+            'password' => array("regex"=>"((?=.*\d)(?=.*[a-z])(?=.*[@#$%.]).{6,20})","error"=>"Password must be at least 6 character , contain 1 number and 1 special char"),
+            'tel' => array("regex"=>"/\(?([0-9]{3})\)?([ .-]?)([0-9]{3})\2([0-9]{4})/","error"=>"Tel error"),
+            'email' => array("regex"=>"/[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,6}/","error"=>"Email is not valid"),
+            ];
+
+            $username = $request->request->get('username');
+            $password = $request->request->get('password');
+            $confirmpassword = $request->request->get('confirmpassword');
+            $email = $request->request->get('email');
+            $existingUser = false;
+
+            $error = $this->checker($checker_array,$request);
+            $email = ($connectedUser->getEmail() != $email)?$email:null;
+
+            $username = ($connectedUser->getUsername() != $username)?$username:null;
+
+            if($username || $email)
+                $existingUser = $this->findEmailOrLogin($email,$username);
+            
+            if(count($error)>0)
+            {
+
+                $data = $error;
+                $view = $this->view($data, 400)
+                    ->setTemplate('default/getUsers.html.twig')
+                    ->setTemplateVar('users');
+
+                return $this->handleView($view);
+            }
+
+            if($existingUser)
+            {
+                $data = [];
+                if($email == $existingUser->getEmail())
+                    $data["email"]= "Email already exists";
+                if($username == $existingUser->getUsername())
+                    $data["username"]= "Login already exists";
+
+                $view = $this->view($data, 400)
+                    ->setTemplate('default/getUsers.html.twig')
+                    ->setTemplateVar('users');
+
+                return $this->handleView($view);
+            }
+
+            if($confirmpassword != $password)
+            {
+
+                $data = "Password and confirm password are not the same";
+
+                $view = $this->view($data, 400)
+                    ->setTemplate('default/getUsers.html.twig')
+                    ->setTemplateVar('users');
+
+                return $this->handleView($view);
+            }
+
+
+            $email?$connectedUser->setEmail($email):null;
+            $username?$connectedUser->setUsername($username):null;
+            
+            if($password && strlen($password)>=6)
+            {
+                $encoder = $this->container->get('security.password_encoder');
+                $encoded = $encoder->encodePassword($connectedUser,$password);
+                $connectedUser->setPassword($encoded);
+            }
+
+
+            try {
+                 $em->flush();  
+                 $data = "ok";
+                 $code = 200;
+             } catch (Exception $e) {
+                
+                 $data = "Error " . $e->getMessage();
+                $code = 500;
+             }
+
+            $view = $this->view($data, $code)
+                ->setTemplate('default/getUsers.html.twig')
+                ->setTemplateVar('users');
+
+            return $this->handleView($view);
+
+        }else
+        {
+        
+            $view = $this->view('Not connected', 403)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
+
+            return $this->handleView($view);
+        }
+
     }
 
     
@@ -233,6 +391,76 @@ class ApiController extends FOSRestController
         } 
     }
 
+    protected function isEventValid($dateStart,$dateEnd,$userId){
+
+        $params = $this->get('doctrine')
+                         ->getManager('events')
+                         ->getRepository('StoreBundle:Params')
+                         ->findOneBy(array('idUser' => intval($userId)));
+
+        $bookablePeriods = $params->getBookablePeriods();
+        $duree = $params->getDuree();
+        $start = date_create($dateStart);
+        $format = 'Y-m-d H:i:s';
+        $end = date_create($dateEnd);
+        $timestampstart = date_timestamp_get($start);
+        $timestampend = date_timestamp_get($end);
+        $startday = date('w',$timestampstart);
+        $endday = date('w',$timestampend);
+        $hourstart = date('H',$timestampstart);
+        $hourend = date('H',$timestampend);
+        $currentPeriod = $bookablePeriods[$startday];
+        $periodstartAM = date_create();
+        $periodendAM = date_create();
+        $periodstartPM = date_create();
+        $periodendPM = date_create();
+        /*echo date_format($start,$format);
+        echo date_format($end,$format);*/
+
+        $periods = explode(";",$currentPeriod);
+        if(isset($periods[0]) && strlen($periods[0])>0)
+        {
+            $AMfromarray = explode(":",$periods[0]);
+            $AMtoarray = explode(":",$periods[1]);
+            $periodstartAM = clone $start;
+            date_time_set ($periodstartAM,$AMfromarray[0],$AMfromarray[1]);
+            $periodendAM = clone $start;
+            date_time_set ($periodendAM,$AMtoarray[0],$AMtoarray[1]);
+        }
+        if(isset($periods[2]) && strlen($periods[2])>0 )
+        {
+            $PMfromarray = explode(":",$periods[2]);
+            $PMtoarray = explode(":",$periods[3]);
+            $periodstartPM = clone $end;
+            date_time_set ($periodstartPM,$PMfromarray[0],$PMfromarray[1]);
+            $periodendPM = clone $end;
+            date_time_set ($periodendPM,$PMtoarray[0],$PMtoarray[1]);
+            /*echo ("^^^^^^^^^".$currentPeriod."--->".$PMfromarray[0].":".$PMfromarray[1]."<-----");
+            echo ("--->".$PMtoarray[0].":".$PMtoarray[1]."<-----");
+            echo "********";*/
+        }
+
+        
+        
+
+        $checkDay = ($startday==$endday);
+        $checkstartend = $start < $end;
+        
+        $checkPeriod = ($start >= $periodstartAM && $end <= $periodendAM) || ($start >= $periodstartPM && $end <= $periodendPM);
+        /*echo "(".date_format($start,$format) .">=". date_format($periodstartAM,$format) ."&&". date_format($end,$format).
+        " <= ".date_format($periodendAM,$format)." || (".date_format($start,$format)." >= ".date_format($periodstartPM,$format)." && ".
+        date_format($end,$format)." <= ".date_format($periodendPM,$format)."";*/
+        $subTime = $timestampend - $timestampstart;
+
+        $minutes = ($subTime/60);
+        /*echo "minutes: $minutes $subTime";*/
+        $checkDuree = ($minutes <= $duree);
+        /*echo ("res : ".$checkDay ."&&". $checkstartend ."&&". $checkPeriod ."&&". $checkDuree);*/
+        return $checkDay && $checkstartend && $checkPeriod && $checkDuree;
+
+
+    }
+
     /**
      * Book an event by posting form data
      * check if event is free, then book it
@@ -255,8 +483,12 @@ class ApiController extends FOSRestController
         $dateEnd = $request->request->get('dateEnd');
         $title = $request->request->get('title');
        
-        
-        if($this->isFree($dateStart,$dateEnd,$userId))
+
+       if(!$this->isEventValid($dateStart,$dateEnd,$userId))
+       {
+                $view = $this->view("Invalid reservation", 400);
+                return $this->handleView($view);
+       }else if($this->isFree($dateStart,$dateEnd,$userId))
         {
                 $reservation = new Reservations();
                 echo("after");
@@ -320,12 +552,11 @@ class ApiController extends FOSRestController
 
     /**
      * TODO
-     * @return array
+     * 
      * @Put("/params/user")
      * @Security("has_role('ROLE_USER')")
      */
     public function putParamsAction(Request $request){
-        
         $connectedUser = $this->getUser();
         if($connectedUser)
         {
@@ -334,9 +565,12 @@ class ApiController extends FOSRestController
             $bookable_periode = $request->request->get('bookable_period');
             $bookable = 1;
             $duree = $request->request->get('duree');
-            $message = \varchar($request->request->get('message'));
+            $message = $request->request->get('message');
 
+            //check si il y a une entree pour le user id
             $params = $em->getRepository('StoreBundle:Params')->findOneByidUser($idUser);
+            //récupère par son ID le params a modifier (nécessaire il semble pour faire un PUT dans doctrine)
+            $params = $em->getRepository('StoreBundle:Params')->find($params->getId());
 
             if (!$params) {
                 throw $this->createNotFoundException(
@@ -345,12 +579,21 @@ class ApiController extends FOSRestController
             }
 
             $params->setDuree($duree);
-            $params->setBookablePeriods($bookable_periode);
+            $params->setBookablePeriods(array($bookable_periode));
             $params->setMessage($message);
-            $em->flush();
 
-            $data = "ok";
-            $view = $this->view($user, 200)
+            try {
+                 $em->flush();  
+                 $data = "ok";
+                 $code = 200;
+             } catch (Exception $e) {
+
+                 $data = $e->getMessage();
+                $code = 500;
+             }
+
+            
+            $view = $this->view($data, $code)
                 ->setTemplate('default/getUsers.html.twig')
                 ->setTemplateVar('users');
 
@@ -403,7 +646,8 @@ class ApiController extends FOSRestController
         $checker_array = [
             'username' => array("regex"=>"/^[a-zA-Z0-9]+([_\s\-]?[a-zA-Z0-9])*$/","error"=>"Login must be alphanumerical"),
             'password' => array("regex"=>"((?=.*\d)(?=.*[a-z])(?=.*[@#$%.]).{6,20})","error"=>"Password must be at least 6 character , contain 1 number and 1 special char"),
-            'tel' => array("regex"=>"/\(?([0-9]{3})\)?([ .-]?)([0-9]{3})\2([0-9]{4})/","error"=>"Tel error")
+            'tel' => array("regex"=>"/\(?([0-9]{3})\)?([ .-]?)([0-9]{3})\2([0-9]{4})/","error"=>"Tel error"),
+            'email' => array("regex"=>"/[A-Z0-9a-z._%+-]@[A-Za-z0-9.-]\\.[A-Za-z]{2,6}/","error"=>"Email is not valid"),
             ];
 
         $username = $request->request->get('username');

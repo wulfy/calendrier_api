@@ -52,7 +52,7 @@ class Params
     /**
      * @var string
      *
-     * @ORM\Column(name="message", type="string", length=255)
+     * @ORM\Column(name="message", type="string", length=255, nullable=true)
      */
     private $message;
 
@@ -170,7 +170,7 @@ class Params
      *
      * @return Params
      */
-    public function setMessage(\varchar $message)
+    public function setMessage( $message)
     {
         $this->message = $message;
 

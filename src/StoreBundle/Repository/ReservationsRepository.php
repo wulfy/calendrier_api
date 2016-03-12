@@ -56,12 +56,27 @@ class ReservationsRepository extends \Doctrine\ORM\EntityRepository
 	    }
 	}
 
+
+	public function findClientDataForReservationId($reservationId,$userId){
+		$query = $this->getEntityManager()
+	        ->createQuery(
+	            'SELECT r.id, r.title as title,r.id_client as idClient ,u.username,u.email FROM StoreBundle:Reservations r INNER JOIN StoreBundle:User u WITH r.id_client = u.id 
+	            WHERE r.id_user = :userId AND r.id=:reservationId'
+	        )->setParameters(array('userId' => $userId, 'reservationId' => $reservationId));
+
+	    try {
+	        return $query->getSingleResult();
+	    } catch (\Doctrine\ORM\NoResultException $e) {
+	        return null;
+	    }
+	}
+
 	public function findAllByUserIdWithDetails($userId)
 	{
 		$query = $this->getEntityManager()
 	        ->createQuery(
-	            'SELECT r FROM StoreBundle:Reservations r
-	            WHERE r.id_user = :userId '
+	            'SELECT r.id,r.date_start as dateStart,r.date_end as dateEnd,r.title as title,r.id_client as idClient ,u.username,u.email FROM StoreBundle:Reservations r INNER JOIN StoreBundle:User u WITH r.id_client = u.id 
+	            WHERE r.id_user = :userId AND r.date_start > CURRENT_DATE() ORDER BY r.date_start '
 	        )->setParameter('userId', $userId);
 
 	    try {
