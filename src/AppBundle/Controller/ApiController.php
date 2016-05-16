@@ -12,6 +12,7 @@ use FOS\RestBundle\Controller\Annotations\Put;
 use Symfony\Component\HttpFoundation\Request;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Security;
 use StoreBundle\Entity\User;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ApiController extends FOSRestController
 {
@@ -28,6 +29,20 @@ class ApiController extends FOSRestController
                          ->findAll();
         //$data = array('users' => 'hello', 'tara' => 'tata');
         $view = $this->view($reservations, 200)
+            ->setTemplate('default/getReservations.html.twig')
+            ->setTemplateVar('reservations');
+
+            return $this->handleView($view);
+    }
+    protected function answer(array $answer,$httpcode,$message = null)
+    {
+
+        $fullanswer = $answer?$answer:[];
+
+        if($message != null)
+            $fullanswer["message"] = $message;
+
+        $view = $this->view($fullanswer, $httpcode)
             ->setTemplate('default/getReservations.html.twig')
             ->setTemplateVar('reservations');
 
@@ -629,6 +644,7 @@ class ApiController extends FOSRestController
         {
             if($data = $request->request->get($key))
             {
+                
                 $regex = $value["regex"];
                 (preg_match($regex, $data)===1)?null:$error[$key]=$value["error"];
             }
@@ -646,14 +662,19 @@ class ApiController extends FOSRestController
         $checker_array = [
             'username' => array("regex"=>"/^[a-zA-Z0-9]+([_\s\-]?[a-zA-Z0-9])*$/","error"=>"Login must be alphanumerical"),
             'password' => array("regex"=>"((?=.*\d)(?=.*[a-z])(?=.*[@#$%.]).{6,20})","error"=>"Password must be at least 6 character , contain 1 number and 1 special char"),
-            'tel' => array("regex"=>"/\(?([0-9]{3})\)?([ .-]?)([0-9]{3})\2([0-9]{4})/","error"=>"Tel error"),
-            'email' => array("regex"=>"/[A-Z0-9a-z._%+-]@[A-Za-z0-9.-]\\.[A-Za-z]{2,6}/","error"=>"Email is not valid"),
+            'email' => array("regex"=>"/[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}/","error"=>"Email is not valid"),
+            'tel' => array("regex"=>"/([0-9]{2}){5}/","error"=>"Tel error"),
+            
             ];
+
+        $type = $request->request->get('role');
+        $type_user = (stristr($type,"user") != false);  
+        $roles = $type_user?["ROLE_USER"]:["ROLE_CLIENT"];
 
         $username = $request->request->get('username');
         $password = $request->request->get('password');
         $email = $request->request->get('email');
-        $roles = explode(",",$request->request->get('roles'));
+        //$roles = explode(",",$request->request->get('roles'));
         $error = $this->checker($checker_array,$request);
         $existingUser = $this->findEmailOrLogin($email,$username);
         if(count($error)>0)
@@ -671,15 +692,12 @@ class ApiController extends FOSRestController
         {
             $data = [];
             if($email == $existingUser->getEmail())
-                $data["email"]= "Email already exists";
+                $message = $data["email"] = "Email already exists";
             if($username == $existingUser->getUsername())
-                $data["username"]= "Login already exists";
+                $message = $data["username"] = "Login already exists";
 
-            $view = $this->view($data, 400)
-                ->setTemplate('default/getUsers.html.twig')
-                ->setTemplateVar('users');
 
-            return $this->handleView($view);
+           return $this->answer($data,400,$message);
         }
 
         $user = new User();
@@ -687,30 +705,44 @@ class ApiController extends FOSRestController
         $encoder = $this->container->get('security.password_encoder');
         $encoded = $encoder->encodePassword($user,$password);
 
+        //persist new user
         $user->setUsername($username);
         $user->setPassword($encoded);
         $user->setRoles($roles);
         $user->setEmail($email);
-                
+        //$user->setRoles($role);
         $em = $this->getDoctrine()->getManager();
-
         $em->persist($user);
         $em->flush();
+        if($type_user)
+        {
+        //create calendar for this user
+            try{
+                $params = New Params();
+                $params->setDuree("30");
+                $params->setBookablePeriods(explode(",",";;;,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,;;;"));
+                //$params->setBookablePeriods(";;;,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,;;;");
+                $params->setMessage(" Calendrier de ".$user->getUsername());
+                $params->setBookable(1);
+                $params->setIdUser($user->getId());
+                $em->persist($params);
+                $em->flush();
+            }catch (\Exception $e) {
+                //insert params error, removing user
 
-        $params = New Params();
-        $params->setDuree("30");
-        $params->setBookablePeriods(";;;,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,08:00;12:00;14:30;18:30,;;;");
-        $params->setMessage("");
-        $params->setBookable(1);
-        $params->setIdUser($user->getId());
-        $em->flush();
-
-        $data = "ok";
-        $view = $this->view($user, 200)
-            ->setTemplate('default/getUsers.html.twig')
-            ->setTemplateVar('users');
-
-        return $this->handleView($view);
+                $this->getDoctrine()->resetManager();
+                $em =  $this->getDoctrine()->getManager();
+                
+                $userToRemove = $em->getRepository('StoreBundle:User')->findOneByid($user->getId());
+                $em->remove($userToRemove);
+                $em->flush();
+                return $this->answer([],500,$e->getMessage());
+            }
+        }
+        
+        
+        //$answer = array("login"=>$username,"password"=>$password);
+        return $this->answer([],400,"ok");
 
     }
 }
