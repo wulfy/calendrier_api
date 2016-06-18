@@ -9,6 +9,7 @@ use StoreBundle\Entity\Params;
 use FOS\RestBundle\Controller\Annotations\Get;
 use FOS\RestBundle\Controller\Annotations\Post;
 use FOS\RestBundle\Controller\Annotations\Put;
+use FOS\RestBundle\Controller\Annotations\Delete;
 use Symfony\Component\HttpFoundation\Request;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Security;
 use StoreBundle\Entity\User;
@@ -487,13 +488,13 @@ class ApiController extends FOSRestController
         $connectedUser = $this->getUser();  
         $clientId = $connectedUser->getId();
 
-        if($connectedUser->getRoles()[0] == 'ROLE_USER')
-        {
-            $userId = $clientId;
-        }else
-        {
+       // if($connectedUser->getRoles()[0] == 'ROLE_USER')
+        //{
+           // $userId = $clientId;
+        //}else
+        //{
             $userId = $request->request->get('userid');
-        }
+        //}
         $dateStart = $request->request->get('dateStart');
         $dateEnd = $request->request->get('dateEnd');
         $title = $request->request->get('title');
@@ -607,22 +608,48 @@ class ApiController extends FOSRestController
                 $code = 500;
              }
 
-            
-            $view = $this->view($data, $code)
-                ->setTemplate('default/getUsers.html.twig')
-                ->setTemplateVar('users');
+            return $this->answer([],$code,$data);
 
-            return $this->handleView($view);
         }else
         {
         
-        $view = $this->view('Not connected', 403)
-            ->setTemplate('default/getReservations.html.twig')
-            ->setTemplateVar('reservations');
-
-            return $this->handleView($view);
+        return $this->answer([],403,'Not connected');
         }
         
+    }
+
+    /**
+     * @Delete("/events/{eventId}")
+     * @Security("has_role('ROLE_CLIENT')")
+     */
+    public function deleteEventAction($eventId){
+        $connectedUser = $this->getUser();  
+        $userId = $connectedUser->getId();
+        $em = $this->getDoctrine()->getManager();
+
+        $event = $em->getRepository('StoreBundle:Reservations')->findOneByid($eventId);
+        $http_code = 200;
+        $message = "";
+
+        if($event !== null)
+        {
+            if($event->getIdUser() === $userId || $event->getIdClient() === $userId)
+            {
+                $em->remove($event);
+                $em->flush();
+                $http_code = 200;
+                $message = "Réservation supprimée";
+            }else{
+                $http_code = 403;
+                $message = "Autorisation refusée";
+            }
+                
+        }else{
+            $http_code = 404;
+            $message = "Réservation non trouvée";
+        }
+            
+        return $this->answer([],$http_code,$message);
     }
 
     public function findEmailOrLogin($email,$username){
@@ -742,7 +769,7 @@ class ApiController extends FOSRestController
         
         
         //$answer = array("login"=>$username,"password"=>$password);
-        return $this->answer([],400,"ok");
+        return $this->answer([],200,"ok");
 
     }
 }
